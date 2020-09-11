@@ -4,6 +4,7 @@ import logging
 import os
 import urllib.parse
 import urllib.request
+from collections import namedtuple
 
 import boto3
 
@@ -117,6 +118,8 @@ def codepipeline_detail(message):
         }
         return states.get(state, ('#DAA038', ':grey_question:'))
 
+    ActionState = namedtuple('ActionState', ('name', 'url'))
+
     time = message['time']
     detail = message['detail']
     pipeline = detail['pipeline']
@@ -124,40 +127,74 @@ def codepipeline_detail(message):
     state = detail['state']
     color, emoji = get_emoji(state)
 
-    return {
-        'color': color,
-        'blocks': (
-            {
-                'type': 'section',
-                'text': {
-                    'type': 'plain_text',
-                    'emoji': True,
-                    'text': f'{emoji} {state.capitalize()} pipeline "{pipeline}".',
+    client = boto3.client('codepipeline')
+    resp = client.get_pipeline_state(name=pipeline)
+
+    failed_actions = []
+    for stage_state in resp['stageStates']:
+        for action_state in stage_state['actionStates']:
+            if action_state['latestExecution']['status'] == 'Failed':
+                failed_actions.append(
+                    ActionState(
+                        action_state['actionName'],
+                        action_state['latestExecution']['externalExecutionUrl'],
+                    ),
+                )
+
+    blocks = [
+        {
+            'type': 'section',
+            'text': {
+                'type': 'plain_text',
+                'emoji': True,
+                'text': f'{emoji} {state.capitalize()} pipeline "{pipeline}".',
+            },
+        },
+        {
+            'type': 'section',
+            'fields': [
+                {
+                    'type': 'mrkdwn',
+                    'text': f'*State:*\n{state}',
                 },
+                {
+                    'type': 'mrkdwn',
+                    'text': f'*Execution ID:*\n`{execution_id}`',
+                },
+            ],
+        },
+        {
+            'type': 'context',
+            'elements': [
+                {
+                    'type': 'mrkdwn',
+                    'text': f'*Timestamp:* {time}',
+                },
+            ],
+        },
+    ]
+
+    if len(failed_actions) > 0:
+        blocks.insert(2, {
+            'type': 'section',
+            'text': {
+                'type': 'mrkdwn',
+                'text': '*Failed actions:*',
             },
-            {
-                'type': 'section',
-                'fields': [
-                    {
-                        'type': 'mrkdwn',
-                        'text': f'*State:*\n{state}',
-                    },
-                    {
-                        'type': 'mrkdwn',
-                        'text': f'*Execution ID:*\n`{execution_id}`',
-                    },
-                ],
+        })
+        blocks.insert(3, {
+            'type': 'section',
+            'text': {
+                'type': 'mrkdwn',
+                'text': ''.join(
+                    (f'• <{failed_action.url}|{failed_action.name}>' for failed_action in failed_actions),
+                ),
             },
-            {
-                'type': 'context',
-                'elements': [
-                    {
-                        'type': 'mrkdwn',
-                        'text': f'*Timestamp:* {time}',
-                    },
-                ],
-            },
-        ),
+        })
+
+    return {
+        'blocks': blocks,
+        'color': color,
     }
 
 
