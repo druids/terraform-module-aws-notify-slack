@@ -46,3 +46,8 @@ variable "service" {
   description = "Service this Lambda will parse messages from"
   type        = "string"
 }
+
+variable "codepipeline_pipeline_resources" {
+  description = "List of CodePipeline ARNs to allow access to for this Lambda"
+  type        = "list"
+}

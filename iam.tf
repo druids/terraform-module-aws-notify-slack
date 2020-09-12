@@ -2,8 +2,7 @@ data "aws_iam_policy_document" "assume_role" {
   count = "${var.create}"
 
   statement {
-    effect = "Allow"
-
+    effect  = "Allow"
     actions = ["sts:AssumeRole"]
 
     principals {
@@ -17,8 +16,7 @@ data "aws_iam_policy_document" "lambda_basic" {
   count = "${var.create}"
 
   statement {
-    sid = "AllowWriteToCloudwatchLogs"
-
+    sid    = "AllowWriteToCloudwatchLogs"
     effect = "Allow"
 
     actions = [
@@ -29,6 +27,13 @@ data "aws_iam_policy_document" "lambda_basic" {
 
     resources = ["arn:aws:logs:*:*:*"]
   }
+
+  statement {
+    sid       = "AllowCodePipelineGetPipelineState"
+    effect    = "Allow"
+    actions   = ["codepipeline:GetPipelineState"]
+    resources = "${var.codepipeline_pipeline_resources}"
+  }
 }
 
 data "aws_iam_policy_document" "lambda" {
@@ -37,12 +42,9 @@ data "aws_iam_policy_document" "lambda" {
   source_json = "${data.aws_iam_policy_document.lambda_basic.0.json}"
 
   statement {
-    sid = "AllowKMSDecrypt"
-
-    effect = "Allow"
-
-    actions = ["kms:Decrypt"]
-
+    sid       = "AllowKMSDecrypt"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
     resources = ["${var.kms_key_arn == "" ? "" : var.kms_key_arn}"]
   }
 }
