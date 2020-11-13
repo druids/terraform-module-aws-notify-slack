@@ -8,15 +8,18 @@ import urllib.request
 import boto3
 
 
+logger = logging.getLogger(__name__)
+
+
 # Decrypt encrypted URL with KMS
 def decrypt(encrypted_url):
     region = os.environ['AWS_REGION']
+    kms = boto3.client('kms', region_name=region)
     try:
-        kms = boto3.client('kms', region_name=region)
         plaintext = kms.decrypt(CiphertextBlob=base64.b64decode(encrypted_url))['Plaintext']
-        return plaintext.decode()
-    except Exception:
-        logging.exception('Failed to decrypt URL with KMS')
+    except Exception as ex:  # pylint:disable=W0703
+        logger.exception('Failed to decrypt URL with KMS: %s', ex)
+    return plaintext.decode()
 
 
 def cloudwatch_notification(message, region):
@@ -56,52 +59,55 @@ def codepipeline_approval(message):
     approval_review_link = approval['approvalReviewLink']
     expires = approval['expires']
 
-    return (
-        {
-            'type': 'section',
-            'text': {
-                'type': 'plain_text',
-                'text': f'Pipeline "{pipeline_name}" is waiting for approval.',
-            },
-            'accessory': {
-                'type': 'button',
+    return {
+        'color': '#FFC800',
+        'blocks': (
+            {
+                'type': 'section',
                 'text': {
                     'type': 'plain_text',
-                    'text': 'Open in :aws: Console',
-                    'emoji': True,
+                    'text': f'Pipeline "{pipeline_name}" is waiting for approval.',
                 },
-                'url': console_link,
-            },
-        },
-        {
-            'type': 'section',
-            'fields': [
-                {
-                    'type': 'mrkdwn',
-                    'text': f'*Action name*:\n{action_name}',
-                },
-                {
-                    'type': 'mrkdwn',
-                    'text': f'*Expires:* {expires}',
-                },
-            ],
-        },
-        {
-            'type': 'actions',
-            'elements': [
-                {
+                'accessory': {
                     'type': 'button',
                     'text': {
                         'type': 'plain_text',
-                        'emoji': False,
-                        'text': 'Review approve',
+                        'text': 'Open in :aws: Console',
+                        'emoji': True,
                     },
-                    'style': 'primary',
-                    'url': approval_review_link,
+                    'url': console_link,
                 },
-            ],
-        },
-    )
+            },
+            {
+                'type': 'section',
+                'fields': [
+                    {
+                        'type': 'mrkdwn',
+                        'text': f'*Action name*:\n{action_name}',
+                    },
+                    {
+                        'type': 'mrkdwn',
+                        'text': f'*Expires:* {expires}',
+                    },
+                ],
+            },
+            {
+                'type': 'actions',
+                'elements': [
+                    {
+                        'type': 'button',
+                        'text': {
+                            'type': 'plain_text',
+                            'emoji': False,
+                            'text': 'Review approve',
+                        },
+                        'style': 'primary',
+                        'url': approval_review_link,
+                    },
+                ],
+            },
+        )
+    }
 
 
 def codepipeline_detail(message):
@@ -188,10 +194,11 @@ def handle_codepipeline(event, payload):
 
     if 'approval' in event:
         notification = codepipeline_approval(event)
-        payload['blocks'] = notification
+        payload['attachments'].append(notification)
     if 'detail' in event:
         notification = codepipeline_detail(event)
         payload['attachments'].append(notification)
+
     return payload
 
 
@@ -217,7 +224,7 @@ def lambda_handler(event, context):
         try:
             event = json.loads(event)
         except json.JSONDecodeError as ex:
-            logging.exception(f'JSON decode error: {ex}')
+            logger.exception('JSON decode error: %s', ex)
 
     events = []
     if 'Records' in event:
